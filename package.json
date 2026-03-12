@@ -1,0 +1,42 @@
+{
+  "name": "node-game-renderer",
+  "description": "Retained scene graph with pluggable Canvas2D bitmap sprite renderer for node-game-client",
+  "author": {
+    "email": "guillaume.mathe@gmail.com",
+    "name": "Guillaume MATHE"
+  },
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/node-game-renderer.js",
+      "default": "./dist/node-game-renderer.js"
+    },
+    "./src/*": "./src/*"
+  },
+  "module": "./dist/node-game-renderer.js",
+  "browser": "./dist/node-game-renderer.js",
+  "types": "./dist/types/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prebuild": "rm -rf dist",
+    "build:bundle": "node build.js",
+    "build:types": "tsc",
+    "build": "node build.js && tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
