@@ -5,11 +5,16 @@
 export class BitmapRenderer {
   /**
    * @param {HTMLCanvasElement | OffscreenCanvas} canvas
+   * @param {{ pixelPerfect?: boolean }} [options]
    */
-  constructor(canvas) {
+  constructor(canvas, options = {}) {
     this._canvas = canvas;
     this._ctx = canvas.getContext("2d");
     this._lastTimestamp = -1;
+    this.pixelPerfect = options.pixelPerfect || false;
+
+    /** @type {WeakMap<import('./Layer.js').Layer, OffscreenCanvas>} */
+    this._layerCaches = new WeakMap();
   }
 
   /**
@@ -32,9 +37,33 @@ export class BitmapRenderer {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
-    // Camera transform: translate to center, scale by zoom, rotate, translate by -camera position
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(camera.zoom, camera.zoom);
+    if (this.pixelPerfect) {
+      ctx.imageSmoothingEnabled = false;
+
+      const baseScale = Math.min(
+        w / camera.viewportWidth,
+        h / camera.viewportHeight,
+      );
+      const intScale = Math.max(1, Math.floor(baseScale));
+      const effectiveZoom = intScale * camera.zoom;
+
+      const scaledW = camera.viewportWidth * intScale;
+      const scaledH = camera.viewportHeight * intScale;
+      const offsetX = Math.floor((w - scaledW) / 2);
+      const offsetY = Math.floor((h - scaledH) / 2);
+
+      // Clip to letterbox area
+      ctx.beginPath();
+      ctx.rect(offsetX, offsetY, scaledW, scaledH);
+      ctx.clip();
+
+      ctx.translate(offsetX + scaledW / 2, offsetY + scaledH / 2);
+      ctx.scale(effectiveZoom, effectiveZoom);
+    } else {
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(camera.zoom, camera.zoom);
+    }
+
     if (camera.rotation) ctx.rotate(-camera.rotation);
     ctx.translate(-camera.x, -camera.y);
 
@@ -44,20 +73,97 @@ export class BitmapRenderer {
       const layerAlpha = layer.alpha;
       if (layerAlpha <= 0) continue;
 
-      // Draw tile maps first (behind sprites)
-      for (const tileMap of layer.tileMaps) {
-        this._drawTileMap(ctx, tileMap, camera, layerAlpha);
-      }
-
-      // Tick and draw sprites
+      // Always tick sprites (animations advance even for cached layers)
       for (const sprite of layer.sprites) {
         sprite._tick(dt);
-        if (!sprite.visible) continue;
-        this._drawSprite(ctx, sprite, layerAlpha);
+      }
+
+      if (layer.cacheable) {
+        this._drawCachedLayer(ctx, layer, camera, layerAlpha);
+      } else {
+        this._drawLayerContent(ctx, layer, camera, layerAlpha);
       }
     }
 
     ctx.restore();
+  }
+
+  /**
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {import('./Layer.js').Layer} layer
+   * @param {import('./Camera.js').Camera} camera
+   * @param {number} layerAlpha
+   */
+  _drawLayerContent(ctx, layer, camera, layerAlpha) {
+    for (const tileMap of layer.tileMaps) {
+      this._drawTileMap(ctx, tileMap, camera, layerAlpha);
+    }
+    for (const sprite of layer.sprites) {
+      if (!sprite.visible) continue;
+      this._drawSprite(ctx, sprite, layerAlpha);
+    }
+  }
+
+  /**
+   * Draw a cacheable layer: tilemap content from cache, sprites live.
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {import('./Layer.js').Layer} layer
+   * @param {import('./Camera.js').Camera} camera
+   * @param {number} layerAlpha
+   */
+  _drawCachedLayer(ctx, layer, camera, layerAlpha) {
+    if (layer._dirty || !this._layerCaches.has(layer)) {
+      this._rebuildLayerCache(layer);
+      layer._dirty = false;
+    }
+
+    const cache = this._layerCaches.get(layer);
+    if (cache) {
+      ctx.globalAlpha = layerAlpha;
+      ctx.drawImage(cache, 0, 0);
+      ctx.globalAlpha = 1;
+    } else {
+      // No cacheable tilemap content — draw tilemaps normally
+      for (const tileMap of layer.tileMaps) {
+        this._drawTileMap(ctx, tileMap, camera, layerAlpha);
+      }
+    }
+
+    // Sprites always drawn live (they may animate or move)
+    for (const sprite of layer.sprites) {
+      if (!sprite.visible) continue;
+      this._drawSprite(ctx, sprite, layerAlpha);
+    }
+  }
+
+  /**
+   * Render all tilemap content for a layer into an offscreen cache canvas.
+   * @param {import('./Layer.js').Layer} layer
+   */
+  _rebuildLayerCache(layer) {
+    let cacheW = 0;
+    let cacheH = 0;
+    for (const tm of layer.tileMaps) {
+      cacheW = Math.max(cacheW, tm.pixelWidth);
+      cacheH = Math.max(cacheH, tm.pixelHeight);
+    }
+
+    if (cacheW === 0 || cacheH === 0) {
+      this._layerCaches.delete(layer);
+      return;
+    }
+
+    const cache = new OffscreenCanvas(cacheW, cacheH);
+    const cacheCtx = cache.getContext("2d");
+    if (this.pixelPerfect) {
+      cacheCtx.imageSmoothingEnabled = false;
+    }
+
+    for (const tileMap of layer.tileMaps) {
+      this._drawTileMapFull(cacheCtx, tileMap);
+    }
+
+    this._layerCaches.set(layer, cache);
   }
 
   /**
@@ -97,6 +203,7 @@ export class BitmapRenderer {
   }
 
   /**
+   * Draw a tilemap with viewport culling (normal rendering path).
    * @param {CanvasRenderingContext2D} ctx
    * @param {import('./TileMap.js').TileMap} tileMap
    * @param {import('./Camera.js').Camera} camera
@@ -152,6 +259,46 @@ export class BitmapRenderer {
   }
 
   /**
+   * Draw all tiles of a tilemap without viewport culling (for cache building).
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {import('./TileMap.js').TileMap} tileMap
+   */
+  _drawTileMapFull(ctx, tileMap) {
+    const { columns, rows, tileWidth, tileHeight } = tileMap;
+
+    for (const layerName of tileMap.layerNames) {
+      const tileLayer = tileMap.getLayer(layerName);
+      if (!tileLayer.visible) continue;
+
+      ctx.globalAlpha = tileLayer.alpha;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < columns; c++) {
+          const val = tileLayer.data[r * columns + c];
+          if (val === 0) continue;
+
+          const frameDef = tileMap.sheet.getFrame(val - 1);
+          if (!frameDef) continue;
+
+          ctx.drawImage(
+            tileMap.sheet.image,
+            frameDef.x,
+            frameDef.y,
+            frameDef.w,
+            frameDef.h,
+            c * tileWidth,
+            r * tileHeight,
+            tileWidth,
+            tileHeight,
+          );
+        }
+      }
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  /**
    * Resize the canvas.
    * @param {number} width
    * @param {number} height
@@ -165,5 +312,6 @@ export class BitmapRenderer {
   destroy() {
     this._ctx = null;
     this._canvas = null;
+    this._layerCaches = null;
   }
 }

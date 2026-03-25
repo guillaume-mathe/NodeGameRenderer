@@ -11,12 +11,24 @@ export class Layer {
     this.name = name;
     this.visible = true;
     this.alpha = 1;
+    this.cacheable = false;
+    this._dirty = true;
 
     /** @type {Sprite[]} */
     this._sprites = [];
 
     /** @type {import('./TileMap.js').TileMap[]} */
     this._tileMaps = [];
+  }
+
+  /** @returns {boolean} Whether this layer needs to be redrawn. */
+  get dirty() {
+    return this._dirty;
+  }
+
+  /** Mark this layer as needing a redraw (e.g. after modifying tile data). */
+  invalidate() {
+    this._dirty = true;
   }
 
   /** @returns {Sprite[]} */
@@ -59,6 +71,7 @@ export class Layer {
    */
   addTileMap(tileMap) {
     this._tileMaps.push(tileMap);
+    this._dirty = true;
   }
 
   /**
@@ -70,6 +83,7 @@ export class Layer {
     const idx = this._tileMaps.indexOf(tileMap);
     if (idx === -1) return false;
     this._tileMaps.splice(idx, 1);
+    this._dirty = true;
     return true;
   }
 }

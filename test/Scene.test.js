@@ -95,4 +95,49 @@ describe("Layer", () => {
     expect(layer.visible).toBe(true);
     expect(layer.alpha).toBe(1);
   });
+
+  it("defaults cacheable to false and dirty to true", () => {
+    const scene = new Scene();
+    const layer = scene.createLayer("ground");
+    expect(layer.cacheable).toBe(false);
+    expect(layer.dirty).toBe(true);
+  });
+
+  it("invalidate sets dirty to true", () => {
+    const scene = new Scene();
+    const layer = scene.createLayer("ground");
+    layer._dirty = false;
+    expect(layer.dirty).toBe(false);
+    layer.invalidate();
+    expect(layer.dirty).toBe(true);
+  });
+
+  it("adding a tilemap sets dirty", () => {
+    const scene = new Scene();
+    const layer = scene.createLayer("ground");
+    layer._dirty = false;
+    const tm = new TileMap(makeSheet(), {
+      tileWidth: 32,
+      tileHeight: 32,
+      columns: 4,
+      rows: 4,
+    });
+    layer.addTileMap(tm);
+    expect(layer.dirty).toBe(true);
+  });
+
+  it("removing a tilemap sets dirty", () => {
+    const scene = new Scene();
+    const layer = scene.createLayer("ground");
+    const tm = new TileMap(makeSheet(), {
+      tileWidth: 32,
+      tileHeight: 32,
+      columns: 4,
+      rows: 4,
+    });
+    layer.addTileMap(tm);
+    layer._dirty = false;
+    layer.removeTileMap(tm);
+    expect(layer.dirty).toBe(true);
+  });
 });
