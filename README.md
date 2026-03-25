@@ -6,8 +6,10 @@ Retained scene graph with pluggable Canvas2D bitmap sprite renderer for [node-ga
 
 - **Retained scene graph** — Scene/Layer/Sprite tree; update properties, renderer draws automatically
 - **Sprite sheets** — grid-based or custom region definitions with named animations
-- **Tile maps** — multiple named layers, viewport culling, Tiled JSON loader
+- **Tile maps** — multiple named layers, viewport culling, bulk fill/region operations, Tiled JSON loader
 - **Camera** — position, zoom, follow with lerp, world↔screen coordinate conversion
+- **Pixel-perfect scaling** — optional integer-scaled rendering with automatic letterboxing
+- **Layer caching** — cacheable layers render tilemap content to an offscreen canvas for better performance
 - **Context-agnostic** — works with both `HTMLCanvasElement` and `OffscreenCanvas` (Web Workers)
 - **Zero runtime dependencies**
 
@@ -31,7 +33,7 @@ const layer = scene.createLayer("entities");
 const hero = layer.addSprite(heroSheet);
 hero.play("walk");
 
-const renderer = new BitmapRenderer(canvas);
+const renderer = new BitmapRenderer(canvas, { pixelPerfect: true });
 const camera = new Camera(canvas.width, canvas.height);
 
 function render(state, alpha, timestamp) {

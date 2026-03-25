@@ -58,11 +58,15 @@ Grid of tile indices referencing a SpriteSheet.
 
 ### Methods
 
-- `createLayer(name)` → `{ name, data, visible, alpha }`
+- `createLayer(name, data?)` → `{ name, data, visible, alpha }` — optional `data` is a flat array of 0-based tile indices (-1 for empty)
 - `getLayer(name)` → layer or `undefined`
 - `removeLayer(name)` → boolean
 - `setTile(layerName, col, row, tileIndex)` — 0-based frame index
 - `getTile(layerName, col, row)` → 0-based frame index or -1 (empty)
+- `setTiles(layerName, data)` — bulk-set all tiles from a flat row-major array of 0-based indices (-1 for empty)
+- `fill(layerName, tileIndex)` — fill entire layer with a single tile index (-1 to clear)
+- `fillRegion(layerName, col, row, width, height, tileIndex)` — fill a rectangular region
+- `clear(layerName)` — clear all tiles in a layer (set to empty)
 
 ---
 
@@ -95,6 +99,8 @@ Ordered group within a scene. Created via `scene.createLayer(name)`.
 ### Properties
 
 - `name`, `visible`, `alpha`
+- `cacheable` — when `true`, tilemap content is rendered to an offscreen cache canvas (default: `false`)
+- `dirty` — (getter) whether this layer needs to be redrawn
 - `sprites` — array of Sprite refs
 - `tileMaps` — array of TileMap refs
 
@@ -104,6 +110,7 @@ Ordered group within a scene. Created via `scene.createLayer(name)`.
 - `removeSprite(sprite)` → boolean
 - `addTileMap(tileMap)`
 - `removeTileMap(tileMap)` → boolean
+- `invalidate()` — mark this layer as needing a redraw (e.g. after modifying tile data)
 
 ---
 
@@ -127,13 +134,18 @@ Ordered collection of layers.
 
 Canvas2D renderer implementing the pluggable renderer contract.
 
-### `new BitmapRenderer(canvas)`
+### `new BitmapRenderer(canvas, options?)`
 
 - `canvas` — `HTMLCanvasElement` or `OffscreenCanvas`
+- `options.pixelPerfect` — when `true`, use integer-scaled rendering with automatic letterboxing (default: `false`)
+
+### Properties
+
+- `pixelPerfect` — enable/disable pixel-perfect scaling
 
 ### Methods
 
-- `render(scene, camera, timestamp?)` — clear, apply camera transform, draw all layers
+- `render(scene, camera, timestamp?)` — clear, apply camera transform, draw all layers. Cacheable layers have their tilemap content drawn from an offscreen cache; sprites are always drawn live.
 - `resize(width, height)` — resize canvas
 - `destroy()` — release references
 
